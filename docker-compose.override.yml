@@ -1,0 +1,43 @@
+# Docker Compose Override for Development
+# This file is automatically loaded by docker-compose and provides development-specific configurations
+
+services:
+  # Development overrides for backend
+  backend:
+    environment:
+      # Enable development features
+      DEBUG: true
+      DOCS_ENABLED: true
+      REDOC_ENABLED: true
+      LOG_LEVEL: DEBUG
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./backend:/app:ro
+      - ./backend/logs:/app/logs
+    # Override command for development with auto-reload
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Development overrides for frontend
+  frontend:
+    build:
+      target: development
+    environment:
+      # Development-specific environment variables
+      VITE_ENVIRONMENT: development
+      VITE_DEBUG: true
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./frontend:/app:cached
+      - /app/node_modules
+    # Override command for development server
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+
+  # Development overrides for postgres
+  postgres:
+    # Expose postgres port for development tools
+    ports:
+      - "5432:5432"
+    environment:
+      # Enable logging for development
+      POSTGRES_LOG_STATEMENT: all
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: 0

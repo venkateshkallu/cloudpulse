@@ -1,0 +1,130 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudpulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cloudpulse
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: cloudpulse_dev_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - cloudpulse-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cloudpulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cloudpulse-backend
+    restart: unless-stopped
+    environment:
+      # Database Configuration
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: cloudpulse
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: cloudpulse_dev_password
+      
+      # Application Configuration
+      ENVIRONMENT: development
+      DEBUG: true
+      LOG_LEVEL: INFO
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      
+      # Security Configuration
+      SECRET_KEY: dev-secret-key-change-in-production
+      ALLOWED_HOSTS: localhost,127.0.0.1,backend,frontend
+      
+      # CORS Configuration
+      CORS_ORIGINS: http://localhost:5173,http://frontend:5173,http://127.0.0.1:5173
+      CORS_ALLOW_CREDENTIALS: true
+      
+      # Background Tasks Configuration
+      METRICS_UPDATE_INTERVAL: 5
+      ENABLE_BACKGROUND_TASKS: true
+      
+      # Database Pool Configuration
+      DATABASE_POOL_SIZE: 5
+      DATABASE_MAX_OVERFLOW: 10
+      DATABASE_POOL_TIMEOUT: 30
+      
+      # API Configuration
+      API_TITLE: CloudPulse Monitor API
+      API_VERSION: 1.0.0
+      DOCS_ENABLED: true
+      REDOC_ENABLED: true
+      
+      # Health Check Configuration
+      HEALTH_CHECK_TIMEOUT: 5
+      DATABASE_HEALTH_CHECK_TIMEOUT: 3
+    ports:
+      - "8000:8000"
+    networks:
+      - cloudpulse-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/status', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudpulse-frontend
+    restart: unless-stopped
+    environment:
+      # API Configuration
+      VITE_API_BASE_URL: http://localhost:8000/api
+      VITE_WS_BASE_URL: ws://localhost:8000/ws
+      
+      # Application Configuration
+      VITE_APP_TITLE: CloudPulse Monitor
+      VITE_APP_VERSION: 1.0.0
+      VITE_ENVIRONMENT: development
+    ports:
+      - "5173:5173"
+    networks:
+      - cloudpulse-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5173/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+    name: cloudpulse_postgres_data
+
+# Custom network for service communication
+networks:
+  cloudpulse-network:
+    driver: bridge
+    name: cloudpulse-network

@@ -1,0 +1,149 @@
+services:
+  # PostgreSQL Database - Production Configuration
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloudpulse-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-cloudpulse}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./backend/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - cloudpulse-prod-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-cloudpulse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Don't expose ports in production - only internal access
+    # ports:
+    #   - "5432:5432"
+
+  # FastAPI Backend - Production Configuration
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cloudpulse-backend-prod
+    restart: always
+    environment:
+      # Database Configuration
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DATABASE_NAME:-cloudpulse}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      
+      # Application Configuration
+      ENVIRONMENT: production
+      DEBUG: false
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      
+      # Security Configuration
+      SECRET_KEY: ${SECRET_KEY}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost}
+      
+      # CORS Configuration
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
+      
+      # Background Tasks Configuration
+      METRICS_UPDATE_INTERVAL: ${METRICS_UPDATE_INTERVAL:-5}
+      ENABLE_BACKGROUND_TASKS: ${ENABLE_BACKGROUND_TASKS:-true}
+      
+      # Database Pool Configuration
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-20}
+      DATABASE_POOL_TIMEOUT: ${DATABASE_POOL_TIMEOUT:-30}
+      
+      # API Configuration
+      API_TITLE: CloudPulse Monitor API
+      API_VERSION: ${API_VERSION:-1.0.0}
+      DOCS_ENABLED: ${DOCS_ENABLED:-false}
+      REDOC_ENABLED: ${REDOC_ENABLED:-false}
+      
+      # Health Check Configuration
+      HEALTH_CHECK_TIMEOUT: ${HEALTH_CHECK_TIMEOUT:-5}
+      DATABASE_HEALTH_CHECK_TIMEOUT: ${DATABASE_HEALTH_CHECK_TIMEOUT:-3}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - cloudpulse-prod-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/status', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # React Frontend - Production Configuration
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudpulse-frontend-prod
+    restart: always
+    environment:
+      # API Configuration - Use internal network for backend communication
+      VITE_API_BASE_URL: ${FRONTEND_API_URL:-http://localhost:8000/api}
+      VITE_WS_BASE_URL: ${FRONTEND_WS_URL:-ws://localhost:8000/ws}
+      
+      # Application Configuration
+      VITE_APP_TITLE: CloudPulse Monitor
+      VITE_APP_VERSION: ${API_VERSION:-1.0.0}
+      VITE_ENVIRONMENT: production
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    networks:
+      - cloudpulse-prod-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5173/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+# Named volumes for data persistence
+volumes:
+  postgres_prod_data:
+    driver: local
+    name: cloudpulse_postgres_prod_data
+
+# Custom network for service communication
+networks:
+  cloudpulse-prod-network:
+    driver: bridge
+    name: cloudpulse-prod-network
