@@ -7,6 +7,10 @@ export const API_ENDPOINTS = {
   SERVICES: '/services',
   LOGS: '/logs/',
   STATUS: '/status',
+  EVENTS: '/events',
+  MONITORING_TARGETS: '/monitoring/targets',
+  MONITORING_TARGETS_WITH_RESULTS: '/monitoring/targets/with-results',
+  MONITORING_RESULTS: '/monitoring/results',
 } as const;
 
 // HTTP Status Codes

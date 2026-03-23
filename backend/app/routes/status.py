@@ -10,8 +10,9 @@ import random
 from typing import Dict, Any
 
 from ..database import get_db
-from ..schemas import SystemStatus
-from ..models import Service, Log
+from ..schemas import SystemStatus, DetailedHealthResponse
+from ..models import Service, Log, Event
+from ..metrics_collector import get_real_system_metrics
 
 router = APIRouter(prefix="/api/status", tags=["status"])
 
@@ -128,20 +129,44 @@ async def get_system_status(db: Session = Depends(get_db)):
         )
 
 
-@router.get("/health")
-async def get_health_check():
+@router.get("/health", response_model=DetailedHealthResponse)
+async def get_health_check(db: Session = Depends(get_db)):
     """
-    Simple health check endpoint
-    Returns basic service availability information
+    Real health check endpoint with actual system metrics
+    Returns detailed health information including CPU, memory, events
     """
     try:
-        return {
-            "status": "healthy",
-            "service": "cloudpulse-api",
-            "timestamp": datetime.utcnow(),
-            "version": "1.0.0",
-            "uptime_seconds": random.randint(3600, 86400)  # Simulated uptime
-        }
+        # Get real system metrics
+        metrics = get_real_system_metrics()
+        
+        # Get active events count
+        active_events = db.query(Event).filter(Event.is_resolved == 0).count()
+        critical_events = db.query(Event).filter(
+            Event.is_resolved == 0,
+            Event.severity == "critical"
+        ).count()
+        
+        # Get failing services
+        services = db.query(Service).all()
+        failing_services = sum(1 for s in services if s.status == "offline")
+        
+        # Determine status based on metrics and events
+        status = "healthy"
+        if metrics['cpu_percent'] > 80 or metrics['memory_percent'] > 85 or critical_events > 0:
+            status = "critical"
+        elif metrics['cpu_percent'] > 60 or metrics['memory_percent'] > 70 or active_events > 5:
+            status = "degraded"
+        
+        return DetailedHealthResponse(
+            status=status,
+            cpu=metrics['cpu_percent'],
+            memory=metrics['memory_percent'],
+            disk=metrics['disk_percent'],
+            active_events=active_events,
+            critical_events=critical_events,
+            failing_services=failing_services,
+            timestamp=datetime.utcnow()
+        )
     except Exception as e:
         raise HTTPException(
             status_code=503,

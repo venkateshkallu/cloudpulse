@@ -6,6 +6,7 @@ import {
   Settings,
   Info,
   Activity,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/utils/utils";
 
@@ -13,6 +14,8 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/services", icon: Server, label: "Services" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
+  { to: "/monitoring", icon: Activity, label: "Monitoring" },
+  { to: "/events", icon: Bell, label: "Events" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/about", icon: Info, label: "About" },
 ];

@@ -14,9 +14,10 @@ from contextlib import asynccontextmanager
 from .config import settings
 from .database import check_database_connection, is_database_available, reset_database_state
 from .init_db import init_database
-from .routes import metrics, services, logs, status
+from .routes import metrics, services, logs, status, monitoring, events, agents
 from .logging_config import setup_logging, get_logger, log_request_info
 from .exception_handlers import register_exception_handlers
+from .background_tasks import start_background_scheduler
 
 # Setup structured logging
 setup_logging()
@@ -81,6 +82,10 @@ async def lifespan(app: FastAPI):
         "environment": settings.ENVIRONMENT,
         "debug_mode": settings.DEBUG
     })
+    
+    # Start background monitoring scheduler
+    start_background_scheduler()
+    logger.info("Background monitoring scheduler started")
     
     yield
     
@@ -276,6 +281,9 @@ app.include_router(metrics.router)
 app.include_router(services.router)
 app.include_router(logs.router)
 app.include_router(status.router)
+app.include_router(monitoring.router)
+app.include_router(events.router)
+app.include_router(agents.router)
 
 if __name__ == "__main__":
     import uvicorn

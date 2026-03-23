@@ -5,7 +5,7 @@ Defines request/response models for data validation and serialization
 
 from pydantic import BaseModel, Field, validator
 from datetime import datetime
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from decimal import Decimal
 
 
@@ -107,6 +107,71 @@ class MetricsListResponse(BaseModel):
     """Schema for metrics list response"""
     metrics: List[MetricResponse] = Field(..., description="List of metrics")
     total: int = Field(..., ge=0, description="Total number of metrics")
+
+
+# Monitoring target schemas
+class MonitoringTargetBase(BaseModel):
+    """Base schema for monitoring targets"""
+    name: str = Field(..., min_length=1, max_length=100, description="Display name")
+    target_url: str = Field(..., min_length=1, max_length=500, description="URL or IP to monitor")
+    target_type: Literal["http", "https", "ping", "dns"] = Field("http", description="Type of check")
+    check_interval: int = Field(60, ge=10, le=3600, description="Check interval in seconds")
+    timeout: int = Field(10, ge=1, le=60, description="Timeout in seconds")
+
+
+class MonitoringTargetCreate(MonitoringTargetBase):
+    """Schema for creating a monitoring target"""
+    is_active: bool = Field(True, description="Whether monitoring is active")
+
+
+class MonitoringTargetUpdate(BaseModel):
+    """Schema for updating a monitoring target"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    target_url: Optional[str] = Field(None, min_length=1, max_length=500)
+    target_type: Optional[Literal["http", "https", "ping", "dns"]] = None
+    check_interval: Optional[int] = Field(None, ge=10, le=3600)
+    timeout: Optional[int] = Field(None, ge=1, le=60)
+    is_active: Optional[bool] = None
+
+
+class MonitoringTargetResponse(MonitoringTargetBase):
+    """Schema for monitoring target response"""
+    id: int = Field(..., description="Target ID")
+    is_active: bool = Field(..., description="Whether monitoring is active")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+# Monitoring result schemas
+class MonitoringResultResponse(BaseModel):
+    """Schema for monitoring result response"""
+    id: int = Field(..., description="Result ID")
+    target_id: int = Field(..., description="Target ID")
+    status_code: Optional[int] = Field(None, description="HTTP status code")
+    response_time_ms: Optional[float] = Field(None, description="Response time in ms")
+    is_up: bool = Field(..., description="Whether target is up")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    dns_resolution: Optional[str] = Field(None, description="DNS resolved IP")
+    timestamp: datetime = Field(..., description="Check timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class MonitoringResultListResponse(BaseModel):
+    """Schema for monitoring results list"""
+    results: List[MonitoringResultResponse] = Field(..., description="List of results")
+    total: int = Field(..., ge=0, description="Total count")
+
+
+class TargetWithLatestResult(BaseModel):
+    """Schema for target with its latest result"""
+    target: MonitoringTargetResponse
+    latest_result: Optional[MonitoringResultResponse] = None
+    uptime_percentage: Optional[float] = Field(None, description="Uptime percentage last 24h")
 
 
 # Dashboard and aggregated data schemas
@@ -252,3 +317,168 @@ class DatabaseErrorResponse(BaseModel):
             details={"has_fallback": fallback_data is not None}
         )
         return cls(error=error_info, fallback_data=fallback_data)
+
+# System Metrics Snapshot schemas
+class SystemMetricsSnapshotResponse(BaseModel):
+    """Schema for system metrics snapshot response"""
+    id: int = Field(..., description="Snapshot ID")
+    cpu_percent: float = Field(..., description="CPU usage percentage")
+    memory_percent: float = Field(..., description="Memory usage percentage")
+    memory_used_mb: Optional[float] = Field(None, description="Memory used in MB")
+    memory_total_mb: Optional[float] = Field(None, description="Total memory in MB")
+    disk_percent: Optional[float] = Field(None, description="Disk usage percentage")
+    disk_used_gb: Optional[float] = Field(None, description="Disk used in GB")
+    disk_total_gb: Optional[float] = Field(None, description="Total disk in GB")
+    bytes_sent: Optional[float] = Field(None, description="Total bytes sent")
+    bytes_recv: Optional[float] = Field(None, description="Total bytes received")
+    network_sent_rate: Optional[float] = Field(None, description="Network send rate (bytes/sec)")
+    network_recv_rate: Optional[float] = Field(None, description="Network receive rate (bytes/sec)")
+    timestamp: datetime = Field(..., description="Snapshot timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class SystemMetricsSnapshotsListResponse(BaseModel):
+    """Schema for metrics snapshots list"""
+    snapshots: List[SystemMetricsSnapshotResponse] = Field(..., description="List of snapshots")
+    total: int = Field(..., ge=0, description="Total count")
+
+
+# Event schemas
+class EventBase(BaseModel):
+    """Base event schema"""
+    event_type: str = Field(..., min_length=1, max_length=50, description="Event type")
+    message: str = Field(..., min_length=1, max_length=1000, description="Event message")
+    severity: Literal["info", "warning", "critical"] = Field(..., description="Event severity")
+    source: Optional[str] = Field(None, max_length=50, description="Event source")
+    metadata: Optional[str] = Field(None, description="Additional metadata as JSON")
+
+
+class EventCreate(EventBase):
+    """Schema for creating events"""
+    pass
+
+
+class EventResponse(EventBase):
+    """Schema for event response"""
+    id: int = Field(..., description="Event ID")
+    is_resolved: bool = Field(..., description="Whether event is resolved")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    resolved_at: Optional[datetime] = Field(None, description="Resolution timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class EventsListResponse(BaseModel):
+    """Schema for events list response"""
+    events: List[EventResponse] = Field(..., description="List of events")
+    total: int = Field(..., ge=0, description="Total count")
+
+
+# Real-time system metrics (for /api/metrics/system endpoint)
+class RealTimeSystemMetrics(BaseModel):
+    """Schema for real-time system metrics"""
+    cpu_percent: float = Field(..., ge=0, le=100, description="CPU usage percentage")
+    memory_percent: float = Field(..., ge=0, le=100, description="Memory usage percentage")
+    memory_used_mb: float = Field(..., description="Memory used in MB")
+    memory_total_mb: float = Field(..., description="Total memory in MB")
+    disk_percent: float = Field(..., ge=0, le=100, description="Disk usage percentage")
+    disk_used_gb: float = Field(..., description="Disk used in GB")
+    disk_total_gb: float = Field(..., description="Total disk in GB")
+    network_sent_rate: float = Field(..., ge=0, description="Network send rate (bytes/sec)")
+    network_recv_rate: float = Field(..., ge=0, description="Network receive rate (bytes/sec)")
+    timestamp: datetime = Field(..., description="Metrics timestamp")
+
+
+# Health check response
+class DetailedHealthResponse(BaseModel):
+    """Schema for detailed health check"""
+    status: Literal["healthy", "degraded", "critical"] = Field(..., description="Overall status")
+    cpu: float = Field(..., description="Current CPU percentage")
+    memory: float = Field(..., description="Current memory percentage")
+    disk: float = Field(..., description="Current disk percentage")
+    active_events: int = Field(..., ge=0, description="Number of active events")
+    critical_events: int = Field(..., ge=0, description="Number of critical events")
+    failing_services: int = Field(..., ge=0, description="Number of failing services")
+    timestamp: datetime = Field(..., description="Check timestamp")
+
+# Agent schemas
+class AgentBase(BaseModel):
+    """Base agent schema"""
+    name: str = Field(..., min_length=1, max_length=100, description="Agent name")
+    hostname: Optional[str] = Field(None, max_length=100, description="Agent hostname")
+    os_type: Optional[str] = Field(None, max_length=50, description="OS type")
+
+
+class AgentCreate(AgentBase):
+    """Schema for creating an agent"""
+    pass
+
+
+class AgentResponse(AgentBase):
+    """Schema for agent response"""
+    id: int = Field(..., description="Agent ID")
+    ip_address: Optional[str] = Field(None, description="IP address")
+    status: str = Field(..., description="Agent status")
+    api_key: str = Field(..., description="API key for agent")
+    last_heartbeat: Optional[datetime] = Field(None, description="Last heartbeat timestamp")
+    is_active: bool = Field(..., description="Whether agent is active")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class AgentListResponse(BaseModel):
+    """Schema for agent list response"""
+    agents: List[AgentResponse] = Field(..., description="List of agents")
+    total: int = Field(..., ge=0, description="Total count")
+
+
+class AgentMetricsBase(BaseModel):
+    """Base agent metrics schema"""
+    cpu_percent: Optional[float] = Field(None, ge=0, le=100)
+    memory_percent: Optional[float] = Field(None, ge=0, le=100)
+    memory_used_mb: Optional[float] = Field(None, ge=0)
+    memory_total_mb: Optional[float] = Field(None, ge=0)
+    disk_percent: Optional[float] = Field(None, ge=0, le=100)
+    disk_used_gb: Optional[float] = Field(None, ge=0)
+    disk_total_gb: Optional[float] = Field(None, ge=0)
+    network_sent_rate: Optional[float] = Field(None, ge=0)
+    network_recv_rate: Optional[float] = Field(None, ge=0)
+    load_avg: Optional[float] = Field(None, ge=0)
+
+
+class AgentMetricsSubmit(AgentMetricsBase):
+    """Schema for agent to submit metrics"""
+    hostname: Optional[str] = None
+    ip_address: Optional[str] = None
+    os_type: Optional[str] = None
+
+
+class AgentMetricsResponse(AgentMetricsBase):
+    """Schema for agent metrics response"""
+    id: int = Field(..., description="Metrics ID")
+    agent_id: int = Field(..., description="Agent ID")
+    timestamp: datetime = Field(..., description="Metrics timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class AgentMetricsListResponse(BaseModel):
+    """Schema for agent metrics list"""
+    metrics: List[AgentMetricsResponse] = Field(..., description="List of metrics")
+    total: int = Field(..., ge=0, description="Total count")
+
+
+# Health scoring
+class HealthScoreResponse(BaseModel):
+    """Schema for health score response"""
+    score: int = Field(..., ge=0, le=100, description="Health score 0-100")
+    grade: str = Field(..., description="Letter grade A-F")
+    factors: Dict[str, Any] = Field(..., description="Score factors breakdown")
+    timestamp: datetime = Field(..., description="Score timestamp")

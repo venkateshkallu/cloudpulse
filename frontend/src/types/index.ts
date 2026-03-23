@@ -110,3 +110,98 @@ export interface ApiError {
     timestamp: string;
   };
 }
+
+// Monitoring types for external endpoint monitoring
+export interface MonitoringTarget {
+  id: number;
+  name: string;
+  target_url: string;
+  target_type: 'http' | 'https' | 'ping' | 'dns';
+  check_interval: number;
+  timeout: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonitoringResult {
+  id: number;
+  target_id: number;
+  status_code: number | null;
+  response_time_ms: number | null;
+  is_up: boolean;
+  error_message: string | null;
+  dns_resolution: string | null;
+  timestamp: string;
+}
+
+export interface TargetWithLatestResult {
+  target: MonitoringTarget;
+  latest_result: MonitoringResult | null;
+  uptime_percentage: number | null;
+}
+
+// Event types
+export interface Event {
+  id: number;
+  event_type: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  source: string | null;
+  metadata: string | null;
+  is_resolved: boolean;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+// Real-time system metrics
+export interface RealTimeSystemMetrics {
+  cpu_percent: number;
+  memory_percent: number;
+  memory_used_mb: number;
+  memory_total_mb: number;
+  disk_percent: number;
+  disk_used_gb: number;
+  disk_total_gb: number;
+  network_sent_rate: number;
+  network_recv_rate: number;
+  timestamp: string;
+}
+
+// System metrics snapshot
+export interface SystemMetricsSnapshot {
+  id: number;
+  cpu_percent: number;
+  memory_percent: number;
+  memory_used_mb: number | null;
+  memory_total_mb: number | null;
+  disk_percent: number | null;
+  disk_used_gb: number | null;
+  disk_total_gb: number | null;
+  bytes_sent: number | null;
+  bytes_recv: number | null;
+  network_sent_rate: number | null;
+  network_recv_rate: number | null;
+  timestamp: string;
+}
+
+// Detailed health response
+export interface DetailedHealth {
+  status: 'healthy' | 'degraded' | 'critical';
+  cpu: number;
+  memory: number;
+  disk: number;
+  active_events: number;
+  critical_events: number;
+  failing_services: number;
+  timestamp: string;
+}
+
+// Metrics aggregates
+export interface MetricsAggregates {
+  cpu: { avg: number; min: number; max: number };
+  memory: { avg: number; min: number; max: number };
+  disk: { avg: number; min: number; max: number };
+  network_sent_rate: { avg: number };
+  network_recv_rate: { avg: number };
+}

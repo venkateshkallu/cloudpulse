@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timezone
 
 from .database import engine, SessionLocal, create_tables, check_database_connection
-from .models import Service, Log, Metric
+from .models import Service, Log, Metric, MonitoringTarget, MonitoringResult, SystemMetricsSnapshot, Event
 from .config import settings
 
 # Configure logging

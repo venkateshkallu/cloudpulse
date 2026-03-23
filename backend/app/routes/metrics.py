@@ -8,13 +8,18 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import random
 import time
+import psutil
 from typing import Optional
 
 from ..database import get_db, is_database_available
-from ..schemas import SystemMetrics, MetricsListResponse, MetricResponse, MetricsQueryParams
-from ..models import Metric
+from ..schemas import (
+    SystemMetrics, MetricsListResponse, MetricResponse, MetricsQueryParams,
+    RealTimeSystemMetrics, SystemMetricsSnapshotResponse, SystemMetricsSnapshotsListResponse
+)
+from ..models import Metric, SystemMetricsSnapshot
 from ..exceptions import DatabaseConnectionError, ServiceUnavailableError
 from ..logging_config import get_logger, log_database_operation
+from ..metrics_collector import get_real_system_metrics, get_recent_snapshots, get_metrics_aggregates
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 logger = get_logger(__name__)
@@ -22,23 +27,29 @@ logger = get_logger(__name__)
 
 def generate_current_metrics() -> SystemMetrics:
     """
-    Generate current system metrics with realistic simulated values
-    In a real system, this would fetch actual metrics from monitoring systems
+    Generate current system metrics with real values from the host machine
+    Uses psutil to fetch actual CPU, memory, and network statistics
     """
-    # Generate realistic CPU usage (20-90%)
-    cpu_usage = round(random.uniform(20.0, 90.0), 1)
+    # Get real CPU usage (percentage over a short interval)
+    cpu_usage = round(psutil.cpu_percent(interval=0.1), 1)
     
-    # Generate realistic memory usage (30-85%)
-    memory_usage = round(random.uniform(30.0, 85.0), 1)
+    # Get real memory usage (percentage)
+    memory = psutil.virtual_memory()
+    memory_usage = round(memory.percent, 1)
     
-    # Generate realistic network traffic (0.5-50 MB/s)
-    network_traffic = round(random.uniform(0.5, 50.0), 1)
+    # Get real network traffic (bytes per second)
+    net_io = psutil.net_io_counters()
+    network_traffic = round(net_io.bytes_recv / (1024 * 1024), 1)  # MB/s
     
-    # Generate container count (15-35)
-    container_count = random.randint(15, 35)
+    # Get real container count (count of running Docker containers)
+    try:
+        container_count = len(psutil.docker())
+    except Exception:
+        # Fallback: count processes that look like containers
+        container_count = len([p for p in psutil.process_iter(['name']) 
+                              if p.info['name'] and 'docker' in p.info['name'].lower()])
     
     # Calculate overall health based on metrics
-    # Lower health if CPU or memory is high
     health_factors = []
     if cpu_usage > 80:
         health_factors.append(0.7)
@@ -276,3 +287,64 @@ async def get_metrics_summary(
             "memory_usage": {"avg": 0.0, "min": 0.0, "max": 0.0},
             "network_traffic": {"avg": 0.0, "min": 0.0, "max": 0.0}
         }
+# New endpoints for real system metrics
+@router.get("/system", response_model=RealTimeSystemMetrics)
+async def get_system_metrics():
+    """
+    Get real-time system metrics from psutil
+    Returns actual CPU, memory, disk, and network usage
+    """
+    try:
+        metrics = get_real_system_metrics()
+        return RealTimeSystemMetrics(
+            cpu_percent=metrics['cpu_percent'],
+            memory_percent=metrics['memory_percent'],
+            memory_used_mb=metrics['memory_used_mb'],
+            memory_total_mb=metrics['memory_total_mb'],
+            disk_percent=metrics['disk_percent'],
+            disk_used_gb=metrics['disk_used_gb'],
+            disk_total_gb=metrics['disk_total_gb'],
+            network_sent_rate=metrics['network_sent_rate'],
+            network_recv_rate=metrics['network_recv_rate'],
+            timestamp=metrics['timestamp']
+        )
+    except Exception as e:
+        logger.error(f"Failed to get system metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/snapshots", response_model=SystemMetricsSnapshotsListResponse)
+async def get_metrics_snapshots(
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """Get historical metrics snapshots from database"""
+    snapshots = get_recent_snapshots(db, limit)
+    
+    return SystemMetricsSnapshotsListResponse(
+        snapshots=[SystemMetricsSnapshotResponse(
+            id=s.id,
+            cpu_percent=float(s.cpu_percent),
+            memory_percent=float(s.memory_percent),
+            memory_used_mb=float(s.memory_used_mb) if s.memory_used_mb else None,
+            memory_total_mb=float(s.memory_total_mb) if s.memory_total_mb else None,
+            disk_percent=float(s.disk_percent) if s.disk_percent else None,
+            disk_used_gb=float(s.disk_used_gb) if s.disk_used_gb else None,
+            disk_total_gb=float(s.disk_total_gb) if s.disk_total_gb else None,
+            bytes_sent=float(s.bytes_sent) if s.bytes_sent else None,
+            bytes_recv=float(s.bytes_recv) if s.bytes_recv else None,
+            network_sent_rate=float(s.network_sent_rate) if s.network_sent_rate else None,
+            network_recv_rate=float(s.network_recv_rate) if s.network_recv_rate else None,
+            timestamp=s.timestamp
+        ) for s in snapshots],
+        total=len(snapshots)
+    )
+
+
+@router.get("/aggregates")
+async def get_metrics_aggregates_endpoint(
+    hours: int = Query(24, ge=1, le=8760),
+    db: Session = Depends(get_db)
+):
+    """Get aggregated metrics over a time period"""
+    return get_metrics_aggregates(db, hours)
