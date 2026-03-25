@@ -205,3 +205,50 @@ export interface MetricsAggregates {
   network_sent_rate: { avg: number };
   network_recv_rate: { avg: number };
 }
+
+// Agent types
+export interface Agent {
+  id: number;
+  name: string;
+  hostname: string | null;
+  ip_address: string | null;
+  os_type: string | null;
+  status: 'online' | 'offline';
+  api_key: string;
+  last_heartbeat: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMetrics {
+  id: number;
+  agent_id: number;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  memory_used_mb: number | null;
+  memory_total_mb: number | null;
+  disk_percent: number | null;
+  disk_used_gb: number | null;
+  disk_total_gb: number | null;
+  network_sent_rate: number | null;
+  network_recv_rate: number | null;
+  load_avg: number | null;
+  timestamp: string;
+}
+
+export interface HealthScore {
+  score: number;
+  grade: string;
+  factors: Record<string, number>;
+  details: {
+    cpu_percent: number;
+    memory_percent: number;
+    disk_percent: number;
+    active_events: number;
+    critical_events: number;
+    offline_services: number;
+    total_services: number;
+  };
+  timestamp: string;
+}

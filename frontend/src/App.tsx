@@ -11,6 +11,7 @@ import Settings from "@/pages/Settings";
 import About from "@/pages/About";
 import Monitoring from "@/pages/Monitoring";
 import Events from "@/pages/Events";
+import Agents from "@/pages/Agents";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/logs" element={<Layout><Logs /></Layout>} />
           <Route path="/monitoring" element={<Layout><Monitoring /></Layout>} />
           <Route path="/events" element={<Layout><Events /></Layout>} />
+          <Route path="/agents" element={<Layout><Agents /></Layout>} />
           <Route path="/settings" element={<Layout><Settings /></Layout>} />
           <Route path="/about" element={<Layout><About /></Layout>} />
           <Route path="*" element={<NotFound />} />

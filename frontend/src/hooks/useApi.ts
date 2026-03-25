@@ -17,6 +17,9 @@ export const QUERY_KEYS = {
   SYSTEM_METRICS: ['system-metrics'] as const,
   METRICS_SNAPSHOTS: ['metrics-snapshots'] as const,
   HEALTH: ['health'] as const,
+  AGENTS: ['agents'] as const,
+  AGENT_METRICS: ['agent-metrics'] as const,
+  HEALTH_SCORE: ['health-score'] as const,
 } as const;
 
 // Default query options
@@ -414,6 +417,67 @@ export function useHealth(options?: Partial<UseQueryOptions<DetailedHealth, ApiE
       return response.data;
     },
     refetchInterval: 10000,
+    ...DEFAULT_QUERY_OPTIONS,
+    ...options,
+  });
+}
+// Agent API hooks
+export function useAgents(options?: Partial<UseQueryOptions<Agent[], ApiError | NetworkError>>) {
+  return useQuery({
+    queryKey: QUERY_KEYS.AGENTS,
+    queryFn: async () => {
+      const response = await apiClient.get<{ agents: Agent[]; total: number }>(API_ENDPOINTS.AGENTS);
+      return response.data.agents;
+    },
+    refetchInterval: 30000,
+    ...DEFAULT_QUERY_OPTIONS,
+    ...options,
+  });
+}
+
+export function useAgentMetrics(
+  agentId: number,
+  limit: number = 100,
+  options?: Partial<UseQueryOptions<AgentMetrics[], ApiError | NetworkError>>
+) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.AGENT_METRICS, agentId, limit],
+    queryFn: async () => {
+      const response = await apiClient.get<{ metrics: AgentMetrics[]; total: number }>(
+        `${API_ENDPOINTS.AGENTS}/${agentId}/metrics?limit=${limit}`
+      );
+      return response.data.metrics;
+    },
+    refetchInterval: 30000,
+    ...DEFAULT_QUERY_OPTIONS,
+    ...options,
+  });
+}
+
+export function useAgentLatestMetrics(
+  agentId: number,
+  options?: Partial<UseQueryOptions<any, ApiError | NetworkError>>
+) {
+  return useQuery({
+    queryKey: [...QUERY_KEYS.AGENT_METRICS, agentId, 'latest'],
+    queryFn: async () => {
+      const response = await apiClient.get(`${API_ENDPOINTS.AGENTS}/${agentId}/latest`);
+      return response.data;
+    },
+    refetchInterval: 15000,
+    ...DEFAULT_QUERY_OPTIONS,
+    ...options,
+  });
+}
+
+export function useHealthScore(options?: Partial<UseQueryOptions<HealthScore, ApiError | NetworkError>>) {
+  return useQuery({
+    queryKey: QUERY_KEYS.HEALTH_SCORE,
+    queryFn: async () => {
+      const response = await apiClient.get<HealthScore>(`${API_ENDPOINTS.STATUS}/health-score`);
+      return response.data;
+    },
+    refetchInterval: 30000,
     ...DEFAULT_QUERY_OPTIONS,
     ...options,
   });

@@ -9,7 +9,7 @@ from typing import List
 from .database import SessionLocal
 from .models import MonitoringTarget, MonitoringResult
 from .routes.monitoring import check_target
-from .metrics_collector import collect_and_store_metrics
+from .metrics_collector import collect_and_store_metrics, cleanup_old_metrics
 
 
 async def check_all_targets():
@@ -58,10 +58,22 @@ async def monitoring_scheduler():
         await asyncio.sleep(60)  # Check every 60 seconds
 
 
+async def cleanup_scheduler():
+    """Run cleanup every hour"""
+    while True:
+        try:
+            cleanup_old_metrics()
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+        await asyncio.sleep(3600)  # Every hour
+
+
 def start_background_scheduler():
     """Start the background schedulers"""
     # Start metrics collection (every 10 seconds)
     asyncio.create_task(metrics_scheduler())
     # Start endpoint monitoring (every 60 seconds)
     asyncio.create_task(monitoring_scheduler())
-    print("Background schedulers started: metrics (10s), monitoring (60s)")
+    # Start cleanup (every hour)
+    asyncio.create_task(cleanup_scheduler())
+    print("Background schedulers started: metrics (10s), monitoring (60s), cleanup (1h)")

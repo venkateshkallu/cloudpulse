@@ -329,3 +329,112 @@ async def get_system_uptime():
             status_code=500,
             detail=f"Failed to retrieve uptime information: {str(e)}"
         )
+# Health scoring endpoint
+@router.get("/health-score")
+async def get_health_score(db: Session = Depends(get_db)):
+    """
+    Calculate overall health score (0-100)
+    Based on CPU, memory, disk, events, and services
+    """
+    try:
+        # Get real system metrics
+        metrics = get_real_system_metrics()
+        
+        # Get active events
+        active_events = db.query(Event).filter(Event.is_resolved == 0).count()
+        critical_events = db.query(Event).filter(
+            Event.is_resolved == 0,
+            Event.severity == "critical"
+        ).count()
+        
+        # Get services
+        services = db.query(Service).all()
+        offline_services = sum(1 for s in services if s.status == "offline")
+        
+        # Calculate score (start at 100)
+        score = 100
+        factors = {}
+        
+        # CPU factor (-10 for high CPU)
+        if metrics['cpu_percent'] > 80:
+            score -= 20
+            factors['cpu'] = -20
+        elif metrics['cpu_percent'] > 60:
+            score -= 10
+            factors['cpu'] = -10
+        else:
+            factors['cpu'] = 0
+        
+        # Memory factor (-10 for high memory)
+        if metrics['memory_percent'] > 85:
+            score -= 20
+            factors['memory'] = -20
+        elif metrics['memory_percent'] > 70:
+            score -= 10
+            factors['memory'] = -10
+        else:
+            factors['memory'] = 0
+        
+        # Disk factor (-10 for high disk)
+        if metrics['disk_percent'] > 90:
+            score -= 15
+            factors['disk'] = -15
+        elif metrics['disk_percent'] > 80:
+            factors['disk'] = -5
+            score -= 5
+        else:
+            factors['disk'] = 0
+        
+        # Events factor
+        if critical_events > 0:
+            score -= min(critical_events * 10, 30)
+            factors['critical_events'] = -min(critical_events * 10, 30)
+        else:
+            factors['critical_events'] = 0
+        
+        if active_events > 5:
+            score -= min((active_events - 5) * 2, 10)
+            factors['active_events'] = -min((active_events - 5) * 2, 10)
+        else:
+            factors['active_events'] = 0
+        
+        # Services factor
+        if offline_services > 0:
+            score -= min(offline_services * 15, 30)
+            factors['offline_services'] = -min(offline_services * 15, 30)
+        else:
+            factors['offline_services'] = 0
+        
+        # Ensure score is within bounds
+        score = max(0, min(100, score))
+        
+        # Calculate grade
+        if score >= 90:
+            grade = "A"
+        elif score >= 80:
+            grade = "B"
+        elif score >= 70:
+            grade = "C"
+        elif score >= 60:
+            grade = "D"
+        else:
+            grade = "F"
+        
+        return {
+            "score": score,
+            "grade": grade,
+            "factors": factors,
+            "details": {
+                "cpu_percent": metrics['cpu_percent'],
+                "memory_percent": metrics['memory_percent'],
+                "disk_percent": metrics['disk_percent'],
+                "active_events": active_events,
+                "critical_events": critical_events,
+                "offline_services": offline_services,
+                "total_services": len(services)
+            },
+            "timestamp": datetime.utcnow()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

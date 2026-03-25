@@ -7,8 +7,8 @@ import {
   Info,
   Activity,
   Bell,
+  HardDrive,
 } from "lucide-react";
-import { cn } from "@/utils/utils";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -16,6 +16,7 @@ const navItems = [
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/monitoring", icon: Activity, label: "Monitoring" },
   { to: "/events", icon: Bell, label: "Events" },
+  { to: "/agents", icon: HardDrive, label: "Agents" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/about", icon: Info, label: "About" },
 ];

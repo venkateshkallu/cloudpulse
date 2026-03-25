@@ -335,3 +335,131 @@ def get_metrics_aggregates(db: Session, hours: int = 24) -> Dict[str, Any]:
             "avg": round(sum(recv_values) / len(recv_values), 2) if recv_values else 0
         }
     }
+# Retention policy
+def cleanup_old_metrics():
+    """
+    Clean up old metrics data based on retention policy
+    - Keep raw metrics for 2 days
+    - Delete older data to prevent DB bloat
+    """
+    from datetime import timedelta
+    
+    db = SessionLocal()
+    try:
+        # Delete metrics older than 2 days
+        cutoff = datetime.utcnow() - timedelta(days=2)
+        deleted = db.query(SystemMetricsSnapshot).filter(
+            SystemMetricsSnapshot.timestamp < cutoff
+        ).delete()
+        db.commit()
+        
+        if deleted > 0:
+            logger.info(f"Cleaned up {deleted} old metrics snapshots")
+        
+        # Clean up old agent metrics (same policy)
+        from .models import AgentMetrics
+        deleted_agents = db.query(AgentMetrics).filter(
+            AgentMetrics.timestamp < cutoff
+        ).delete()
+        db.commit()
+        
+        if deleted_agents > 0:
+            logger.info(f"Cleaned up {deleted_agents} old agent metrics")
+        
+        # Clean up old events (keep for 7 days)
+        events_cutoff = datetime.utcnow() - timedelta(days=7)
+        from .models import Event
+        deleted_events = db.query(Event).filter(
+            Event.created_at < events_cutoff,
+            Event.is_resolved == 1
+        ).delete()
+        db.commit()
+        
+        if deleted_events > 0:
+            logger.info(f"Cleaned up {deleted_events} old resolved events")
+        
+    except Exception as e:
+        logger.error(f"Error in cleanup_old_metrics: {e}")
+    finally:
+        db.close()
+
+
+# Anomaly detection
+def detect_anomalies(db: Session, agent_id: int = None) -> list:
+    """
+    Detect anomalies by comparing current values to recent averages
+    Simple deterministic approach: if current > 2x avg of last 10 minutes, it's anomalous
+    """
+    from datetime import timedelta
+    
+    anomalies = []
+    ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
+    
+    # Get recent snapshots
+    query = db.query(SystemMetricsSnapshot).filter(
+        SystemMetricsSnapshot.timestamp >= ten_minutes_ago
+    )
+    if agent_id:
+        # For agent metrics
+        from .models import AgentMetrics
+        recent = db.query(AgentMetrics).filter(
+            AgentMetrics.agent_id == agent_id,
+            AgentMetrics.timestamp >= ten_minutes_ago
+        ).all()
+        
+        if not recent:
+            return anomalies
+            
+        cpu_values = [m.cpu_percent for m in recent if m.cpu_percent]
+        mem_values = [m.memory_percent for m in recent if m.memory_percent]
+        
+        if cpu_values and len(cpu_values) >= 3:
+            avg_cpu = sum(cpu_values) / len(cpu_values)
+            latest_cpu = cpu_values[0]
+            if latest_cpu > avg_cpu * 2 and avg_cpu > 10:
+                anomalies.append({
+                    'type': 'CPU_SPIKE',
+                    'message': f'CPU spike detected: {latest_cpu}% vs avg {avg_cpu:.1f}%',
+                    'severity': 'warning'
+                })
+        
+        if mem_values and len(mem_values) >= 3:
+            avg_mem = sum(mem_values) / len(mem_values)
+            latest_mem = mem_values[0]
+            if latest_mem > avg_mem * 1.5 and avg_mem > 30:
+                anomalies.append({
+                    'type': 'MEMORY_SPIKE',
+                    'message': f'Memory spike detected: {latest_mem}% vs avg {avg_mem:.1f}%',
+                    'severity': 'warning'
+                })
+    else:
+        # Local system metrics
+        recent = query.all()
+        
+        if not recent:
+            return anomalies
+            
+        cpu_values = [s.cpu_percent for s in recent if s.cpu_percent]
+        mem_values = [s.memory_percent for s in recent if s.memory_percent]
+        
+        if cpu_values and len(cpu_values) >= 3:
+            avg_cpu = sum(cpu_values) / len(cpu_values)
+            latest_cpu = cpu_values[0]
+            if latest_cpu > avg_cpu * 2 and avg_cpu > 10:
+                anomalies.append({
+                    'type': 'CPU_SPIKE',
+                    'message': f'CPU spike: {latest_cpu}% (2x avg {avg_cpu:.1f}%)',
+                    'severity': 'warning'
+                })
+        
+        if mem_values and len(mem_values) >= 3:
+            avg_mem = sum(mem_values) / len(mem_values)
+            latest_mem = mem_values[0]
+            if latest_mem > avg_mem * 1.5 and avg_mem > 30:
+                anomalies.append({
+                    'type': 'MEMORY_SPIKE',
+                    'message': f'Memory spike: {latest_mem}% (1.5x avg {avg_mem:.1f}%)',
+                    'severity': 'warning'
+                })
+    
+    return anomalies

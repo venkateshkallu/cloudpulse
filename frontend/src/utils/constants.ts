@@ -11,6 +11,7 @@ export const API_ENDPOINTS = {
   MONITORING_TARGETS: '/monitoring/targets',
   MONITORING_TARGETS_WITH_RESULTS: '/monitoring/targets/with-results',
   MONITORING_RESULTS: '/monitoring/results',
+  AGENTS: '/agents',
 } as const;
 
 // HTTP Status Codes
